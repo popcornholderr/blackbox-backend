@@ -99,7 +99,11 @@ app.post('/api/rooms/:id/save', async (req, res) => {
     res.json(room);
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+app.use(cors({
+  origin: [
+    "http://localhost:3000", 
+    "https://blackbox-omega-peach.vercel.app" // Add your Vercel link here
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));

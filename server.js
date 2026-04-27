@@ -229,9 +229,17 @@ app.get('/api/rooms/:slug', async (req, res) => {
 });
 
 app.post('/api/drops', async (req, res) => {
-  const { content } = req.body;
+  const { content, tempName } = req.body;
 
-  const error = moderateContent(content);
+  if (!content) return res.status(400).json({ error: "Empty post" });
+
+  const contentError = moderateContent(content);
+  if (contentError) return res.status(400).json({ error: contentError });
+
+  if (tempName) {
+    const nameError = moderateContent(tempName);
+    if (nameError) return res.status(400).json({ error: "Invalid name" });
+  }
   if (error) return res.status(400).json({ error });
 
   try {

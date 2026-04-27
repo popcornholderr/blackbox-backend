@@ -17,88 +17,84 @@ app.use(express.json());
 
 // ─────────────────────────────────────────────────────────────
 // BLOCKLIST — English + Hinglish + Gujlish
-// Covers: direct words, common leet/typo variants, romanized
-// Hindi/Gujarati slang and abuses
+// ─────────────────────────────────────────────────────────────
 const BLOCKED_WORDS = [
 
-/* FUCK variations */
-"fuck","fuk","fck","fucc","fuxk","f*ck","f**k","f***","f u c k",
-"f@ck","f#ck","f$ck","f%ck","f^ck","f&ck","f!ck",
-"fu*k","fuc*","fuc*k","f-u-c-k","f_u_c_k",
-"phuck","phuk","phuc","phu*k",
+  /* FUCK variations */
+  "fuck","fuk","fck","fucc","fuxk","f*ck","f**k","f***","f u c k",
+  "f@ck","f#ck","f$ck","f%ck","f^ck","f&ck","f!ck",
+  "fu*k","fuc*","fuc*k","f-u-c-k","f_u_c_k",
+  "phuck","phuk","phuc","phu*k",
 
-/* SHIT */
-"shit","sh1t","sh!t","sh*t","s*it","s**t","$hit","$h1t",
-"shyt","sh1tt","shiit","shi*t","s-h-i-t",
+  /* SHIT */
+  "shit","sh1t","sh!t","sh*t","s*it","s**t","$hit","$h1t",
+  "shyt","sh1tt","shiit","shi*t","s-h-i-t",
 
-/* BITCH */
-"bitch","b1tch","biatch","b!tch","b*tch","btch","b!+ch",
-"b i t c h","b-itch","b_it_ch",
+  /* BITCH */
+  "bitch","b1tch","biatch","b!tch","b*tch","btch","b!+ch",
+  "b i t c h","b-itch","b_it_ch",
 
-/* ASS */
-"ass","a$$","a55","a$s","@ss","a*s","a**","a s s",
-"asshole","a$$hole","a55hole","assh0le","a$$h0le",
+  /* ASS */
+  "ass","a$$","a55","a$s","@ss","a*s","a**","a s s",
+  "asshole","a$$hole","a55hole","assh0le","a$$h0le",
 
-/* DICK */
-"dick","d1ck","dik","d!ck","d*ck","di*k","d i c k",
+  /* DICK */
+  "dick","d1ck","dik","d!ck","d*ck","di*k","d i c k",
 
-/* COCK */
-"cock","c0ck","c*ck","co*k","c o c k",
+  /* COCK */
+  "cock","c0ck","c*ck","co*k","c o c k",
 
-/* PUSSY */
-"pussy","puss","pu$$y","p*ssy","p u s s y",
+  /* PUSSY */
+  "pussy","puss","pu$$y","p*ssy","p u s s y",
 
-/* SLUT */
-"slut","sl0t","sl*t","s l u t",
+  /* SLUT */
+  "slut","sl0t","sl*t","s l u t",
 
-/* WHORE */
-"whore","wh0re","wh*re","w h o r e",
+  /* WHORE */
+  "whore","wh0re","wh*re","w h o r e",
 
-/* FAG */
-"faggot","fag","f4g","f@g","f*g","fa**ot",
+  /* FAG */
+  "faggot","fag","f4g","f@g","f*g","fa**ot",
 
-/* RETARD */
-"retard","ret4rd","ret@rd","re*ard","r e t a r d",
+  /* RETARD */
+  "retard","ret4rd","ret@rd","re*ard","r e t a r d",
 
-/* N WORD */
-"nigga","n1gga","nigg","n!gga","n*g","nigger","n1gger","n!gger","n*gger",
+  /* N WORD */
+  "nigga","n1gga","nigg","n!gga","n*g","nigger","n1gger","n!gger","n*gger",
 
-/* MOTHERFUCKER */
-"motherfucker","motherfuker","motherfcker","mofo","mo-fu","mofoe",
+  /* MOTHERFUCKER */
+  "motherfucker","motherfuker","motherfcker","mofo","mo-fu","mofoe",
 
-/* INDIAN (HINGLISH) */
-"madarchod","madar chod","m@darchod","mad*rchod","m a d a r c h o d",
-"behenchod","behen chod","bhenchod","bhenchod","b*c","b c",
-"bc","b.c","b-c","b*c",
-"chutiya","chut1ya","ch*tia","chut","chutiye","chutiy@",
-"bhosdike","bhosd!ke","bhosd1ke","bhosdikee","bhosd*k",
-"randi","rand1","r*ndi","r a n d i",
-"harami","har@mi","h*r*mi",
-"kamina","kamine","k@m1na",
-"saala","saale","sala","s@la","s*l@",
-"gandu","gaand","gand","g@ndu","g*nd",
-"lund","l0nd","l*nd","l u n d",
-"loda","l0da","l*d@",
-"maa ki aankh","maa ki","maa k!","m@a ki",
-"teri maa","teri maa ki","t3ri maa","t*ri maa",
-"teri behen","teri bhen","t3ri bhen",
+  /* HINGLISH */
+  "madarchod","madar chod","m@darchod","mad*rchod","m a d a r c h o d",
+  "behenchod","behen chod","bhenchod","b*c","b c","bc","b.c","b-c",
+  "chutiya","chut1ya","ch*tia","chut","chutiye","chutiy@",
+  "bhosdike","bhosd!ke","bhosd1ke","bhosdikee","bhosd*k",
+  "randi","rand1","r*ndi","r a n d i",
+  "harami","har@mi","h*r*mi",
+  "kamina","kamine","k@m1na",
+  "saala","saale","sala","s@la","s*l@",
+  "gandu","gaand","gand","g@ndu","g*nd",
+  "lund","l0nd","l*nd","l u n d",
+  "loda","l0da","l*d@",
+  "maa ki aankh","maa ki","maa k!","m@a ki",
+  "teri maa","teri maa ki","t3ri maa","t*ri maa",
+  "teri behen","teri bhen","t3ri bhen",
 
-/* GUJARATI */
-"lavdo","lavda","lavdi","l@vdo","l*vda",
-"bhosdi","bhosdiya","bhosdiyo","bh0sdi",
-"gaand maro","gaandmaro","g@and maro",
-"nakamo","nakama","n@kamo",
-"gando","gandi","g@ndo",
-"gadedo","gadeda","g@dedo",
-"kukro","kukra","k*kr0",
-"tari maa","tari ben","tari maa ni","tari ben ni",
-"taro baap","t@ro baap",
-"bhad ma ja","bhadma ja","bh@d ma j@",
-
+  /* GUJLISH */
+  "lavdo","lavda","lavdi","l@vdo","l*vda",
+  "bhosdi","bhosdiya","bhosdiyo","bh0sdi",
+  "gaand maro","gaandmaro","g@and maro",
+  "nakamo","nakama","n@kamo",
+  "gando","gandi","g@ndo",
+  "gadedo","gadeda","g@dedo",
+  "kukro","kukra","k*kr0",
+  "tari maa","tari ben","tari maa ni","tari ben ni",
+  "taro baap","t@ro baap",
+  "bhad ma ja","bhadma ja","bh@d ma j@",
 
   /* SEX + VARIATIONS */
-  "sex","s3x","s*x","$ex","sexx","sexxx","s e x",
-  "s-e-x","s_ex","sx","secks","seks","seggs",
+  "sex","s3x","s*x","$ex","sexx","sexxx","s e x","s-e-x","s_ex","sx","secks","seks","seggs",
   "s3ggs","segg","segging",
 
   /* SEXUAL TERMS */
@@ -123,14 +119,23 @@ const BLOCKED_WORDS = [
   "suhagrat","suhaagrat",
   "sambhog","sambh0g",
 
-  /* GUJARATI / LOCAL */
+  /* GUJARATI SEXUAL */
   "chodu","ch0du","ch*du",
   "chodi","ch0di","ch*di",
   "chudelo","chudeli",
-  "lauda sex","lavda sex"
+  "lauda sex","lavda sex",
+
+
+  "kill","k1ll","k!ll","k*ll","k i l l",
+
+  "die","d1e","d!e","d*e","d i e",
+
+"rape","r@pe","r*pe","rap3","r a p e",
+
+
+
 ];
 
-// Normalize: lowercase + leet decode + collapse spaces
 const normalize = (text) => {
   return text
     .toLowerCase()
@@ -142,20 +147,15 @@ const normalize = (text) => {
 
 const isAbusive = (text) => {
   const norm = normalize(text);
-  // Check full normalized text AND original (catches spaced-out words)
   const original = text.toLowerCase().replace(/\s+/g, ' ').trim();
   return BLOCKED_WORDS.some(word => norm.includes(word) || original.includes(word));
 };
 
-// Script guard — no native script characters
 const isEnglishOnly = (text) => {
   const allowedChars = /^[a-zA-Z0-9\s.,!?'"()\-]+$/;
   return allowedChars.test(text);
 };
 
-// ─────────────────────────────────────────────────────────────
-// COMBINED MODERATION — call this for every user text input
-// ─────────────────────────────────────────────────────────────
 const moderateContent = (text) => {
   if (!isEnglishOnly(text)) {
     return "Only English letters are allowed.";
@@ -163,7 +163,7 @@ const moderateContent = (text) => {
   if (isAbusive(text)) {
     return "Abusive language is not allowed.";
   }
-  return null; // null = clean
+  return null;
 };
 
 // --- SCHEMAS ---
@@ -228,26 +228,26 @@ app.get('/api/rooms/:slug', async (req, res) => {
   res.json({ room, drops });
 });
 
+// ✅ FIXED — removed stray `if (error)` that was crashing the server
 app.post('/api/drops', async (req, res) => {
   const { content, tempName } = req.body;
 
-  if (!content) return res.status(400).json({ error: "Empty post" });
+  if (!content) return res.status(400).json({ error: "Write something first." });
 
   const contentError = moderateContent(content);
   if (contentError) return res.status(400).json({ error: contentError });
 
   if (tempName) {
     const nameError = moderateContent(tempName);
-    if (nameError) return res.status(400).json({ error: "Invalid name" });
+    if (nameError) return res.status(400).json({ error: "Display name contains invalid words." });
   }
-  if (error) return res.status(400).json({ error });
 
   try {
     const drop = await Drop.create(req.body);
     await Room.findByIdAndUpdate(req.body.roomId, { lastDropAt: Date.now() });
     res.json(drop);
   } catch (e) {
-    res.status(500).json({ error: "Post failed" });
+    res.status(500).json({ error: "Post failed." });
   }
 });
 
@@ -282,8 +282,15 @@ app.post('/api/rooms/:id/save', async (req, res) => {
 app.post('/api/drops/:id/reply', async (req, res) => {
   const { content, tempName, avatarIndex } = req.body;
 
-  const error = moderateContent(content);
-  if (error) return res.status(400).json({ error });
+  if (!content) return res.status(400).json({ error: "Write something first." });
+
+  const contentError = moderateContent(content);
+  if (contentError) return res.status(400).json({ error: contentError });
+
+  if (tempName) {
+    const nameError = moderateContent(tempName);
+    if (nameError) return res.status(400).json({ error: "Display name contains invalid words." });
+  }
 
   try {
     const dropId = req.params.id.trim();

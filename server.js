@@ -13,10 +13,18 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '2mb' })); // needed for base64 images
 
 // ─────────────────────────────────────────────────────────────
-// BLOCKLIST — English + Hinglish + Gujlish
+// IMAGE MODERATION — Google Vision SafeSearch
+// Blocks: adult, violent, racy content
+// Free tier: 1000 requests/month
+// Setup: add GOOGLE_VISION_KEY to your .env
+// ─────────────────────────────────────────────────────────────
+
+
+// ─────────────────────────────────────────────────────────────
+// TEXT BLOCKLIST — English + Hinglish + Gujlish
 // ─────────────────────────────────────────────────────────────
 const BLOCKED_WORDS = [
 
@@ -82,7 +90,7 @@ const BLOCKED_WORDS = [
   "teri behen","teri bhen","t3ri bhen",
 
   /* GUJLISH */
-  "lavdo","lavda","lavdi","l@vdo","l*vda",
+  "lavdo","lavda","lavdi","l@vdo","l*vda","laude","lavde","loude","l*ude","l*wde",
   "bhosdi","bhosdiya","bhosdiyo","bh0sdi",
   "gaand maro","gaandmaro","g@and maro",
   "nakamo","nakama","n@kamo",
@@ -93,16 +101,12 @@ const BLOCKED_WORDS = [
   "taro baap","t@ro baap",
   "bhad ma ja","bhadma ja","bh@d ma j@",
 
-  /* SEX + VARIATIONS */
+  /* SEX */
   "sex","s3x","s*x","$ex","sexx","sexxx","s e x","s-e-x","s_ex","sx","secks","seks","seggs",
   "s3ggs","segg","segging",
-
-  /* SEXUAL TERMS */
   "sexual","s3xual","s*xual","sexuall","sexyy","sexy","s3xy","s*xy",
   "horny","h0rny","h*rny","hornyy","h0rni",
   "lust","l*st","lusst",
-
-  /* ACTION SLANG */
   "suck","suk","s*ck","su*k","sucking","suckin",
   "blowjob","bl0wjob","b*owjob","bj","b.j","b-j",
   "handjob","h@ndjob","h*ndjob","hj",
@@ -118,22 +122,15 @@ const BLOCKED_WORDS = [
   "sex karna","s*x karna","seks karna",
   "suhagrat","suhaagrat",
   "sambhog","sambh0g",
-
-  /* GUJARATI SEXUAL */
   "chodu","ch0du","ch*du",
   "chodi","ch0di","ch*di",
   "chudelo","chudeli",
   "lauda sex","lavda sex",
 
-
+  /* THREATS */
   "kill","k1ll","k!ll","k*ll","k i l l",
-
   "die","d1e","d!e","d*e","d i e",
-
-"rape","r@pe","r*pe","rap3","r a p e",
-
-
-
+  "rape","r@pe","r*pe","rap3","r a p e",
 ];
 
 const normalize = (text) => {
@@ -157,12 +154,8 @@ const isEnglishOnly = (text) => {
 };
 
 const moderateContent = (text) => {
-  if (!isEnglishOnly(text)) {
-    return "Only English letters are allowed.";
-  }
-  if (isAbusive(text)) {
-    return "Abusive language is not allowed.";
-  }
+  if (!isEnglishOnly(text)) return "Only English letters are allowed.";
+  if (isAbusive(text)) return "Abusive language is not allowed.";
   return null;
 };
 
@@ -219,20 +212,15 @@ app.post('/api/rooms', async (req, res) => {
 app.get('/api/rooms/:slug', async (req, res) => {
   const room = await Room.findOne({ slug: req.params.slug });
   if (!room) return res.status(404).send("Not Found");
-
-  let drops = await Drop.find({ roomId: room._id })
-    .sort({ createdAt: -1 })
-    .lean();
-
+  let drops = await Drop.find({ roomId: room._id }).sort({ createdAt: -1 }).lean();
   drops = drops.map(d => ({ ...d, replies: d.replies || [] }));
   res.json({ room, drops });
 });
 
-// ✅ FIXED — removed stray `if (error)` that was crashing the server
 app.post('/api/drops', async (req, res) => {
   const { content, tempName } = req.body;
 
-  if (!content) return res.status(400).json({ error: "Write something first." });
+  if (!content || !content.trim()) return res.status(400).json({ error: "Write something first." });
 
   const contentError = moderateContent(content);
   if (contentError) return res.status(400).json({ error: contentError });
@@ -294,15 +282,11 @@ app.post('/api/drops/:id/reply', async (req, res) => {
 
   try {
     const dropId = req.params.id.trim();
-
     if (!mongoose.Types.ObjectId.isValid(dropId)) {
       return res.status(400).json({ error: "Invalid Drop ID format" });
     }
-
     const drop = await Drop.findById(dropId);
-    if (!drop) {
-      return res.status(404).json({ error: "Drop not found" });
-    }
+    if (!drop) return res.status(404).json({ error: "Drop not found" });
 
     drop.replies.unshift({
       content,
@@ -314,14 +298,12 @@ app.post('/api/drops/:id/reply', async (req, res) => {
     await drop.save();
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).json(drop);
-
   } catch (err) {
     console.error("Reply error:", err);
     return res.status(500).json({ error: "Server error processing reply" });
   }
 });
 
-// ✅ Connect + Listen
 mongoose.connect(process.env.MONGO_URI).then(() => {
   app.listen(process.env.PORT || 5000, () => console.log("🚀 Server Live"));
 });

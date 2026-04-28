@@ -93,7 +93,12 @@ const isAbusive = (text) => {
   return BLOCKED_WORDS.some(word => norm.includes(word) || original.includes(word));
 };
 
-const isEnglishOnly = (text) => /^[a-zA-Z0-9\s.,!?'"()\-]+$/.test(text);
+// ✅ Allows: English letters, numbers, punctuation, AND emojis
+// Strips emojis out first before checking allowed chars, so emojis pass through
+const isEnglishOnly = (text) => {
+  const withoutEmoji = text.replace(/\p{Emoji}/gu, '');
+  return /^[a-zA-Z0-9\s.,!?'"()\-]*$/.test(withoutEmoji);
+};
 
 const moderateContent = (text) => {
   if (!isEnglishOnly(text)) return "Only English letters are allowed.";
@@ -218,7 +223,6 @@ app.post('/api/drops/:id/reply', async (req, res) => {
     const drop = await Drop.findById(dropId);
     if (!drop) return res.status(404).json({ error: "Drop not found" });
 
-    // ✅ push instead of unshift — newest reply goes to bottom
     drop.replies.push({
       content,
       tempName: tempName || "Anonymous",

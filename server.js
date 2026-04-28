@@ -13,67 +13,24 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
-app.use(express.json({ limit: '2mb' })); // needed for base64 images
+app.use(express.json());
 
-// ─────────────────────────────────────────────────────────────
-// IMAGE MODERATION — Google Vision SafeSearch
-// Blocks: adult, violent, racy content
-// Free tier: 1000 requests/month
-// Setup: add GOOGLE_VISION_KEY to your .env
-// ─────────────────────────────────────────────────────────────
-
-
-// ─────────────────────────────────────────────────────────────
-// TEXT BLOCKLIST — English + Hinglish + Gujlish
-// ─────────────────────────────────────────────────────────────
 const BLOCKED_WORDS = [
-
-  /* FUCK variations */
   "fuck","fuk","fck","fucc","fuxk","f*ck","f**k","f***","f u c k",
   "f@ck","f#ck","f$ck","f%ck","f^ck","f&ck","f!ck",
-  "fu*k","fuc*","fuc*k","f-u-c-k","f_u_c_k",
-  "phuck","phuk","phuc","phu*k",
-
-  /* SHIT */
-  "shit","sh1t","sh!t","sh*t","s*it","s**t","$hit","$h1t",
-  "shyt","sh1tt","shiit","shi*t","s-h-i-t",
-
-  /* BITCH */
-  "bitch","b1tch","biatch","b!tch","b*tch","btch","b!+ch",
-  "b i t c h","b-itch","b_it_ch",
-
-  /* ASS */
-  "ass","a$$","a55","a$s","@ss","a*s","a**","a s s",
-  "asshole","a$$hole","a55hole","assh0le","a$$h0le",
-
-  /* DICK */
+  "fu*k","fuc*","fuc*k","f-u-c-k","f_u_c_k","phuck","phuk","phuc","phu*k",
+  "shit","sh1t","sh!t","sh*t","s*it","s**t","$hit","$h1t","shyt","sh1tt","shiit","shi*t","s-h-i-t",
+  "bitch","b1tch","biatch","b!tch","b*tch","btch","b!+ch","b i t c h","b-itch","b_it_ch",
+  "ass","a$$","a55","a$s","@ss","a*s","a**","a s s","asshole","a$$hole","a55hole","assh0le","a$$h0le",
   "dick","d1ck","dik","d!ck","d*ck","di*k","d i c k",
-
-  /* COCK */
   "cock","c0ck","c*ck","co*k","c o c k",
-
-  /* PUSSY */
   "pussy","puss","pu$$y","p*ssy","p u s s y",
-
-  /* SLUT */
   "slut","sl0t","sl*t","s l u t",
-
-  /* WHORE */
   "whore","wh0re","wh*re","w h o r e",
-
-  /* FAG */
   "faggot","fag","f4g","f@g","f*g","fa**ot",
-
-  /* RETARD */
   "retard","ret4rd","ret@rd","re*ard","r e t a r d",
-
-  /* N WORD */
   "nigga","n1gga","nigg","n!gga","n*g","nigger","n1gger","n!gger","n*gger",
-
-  /* MOTHERFUCKER */
   "motherfucker","motherfuker","motherfcker","mofo","mo-fu","mofoe",
-
-  /* HINGLISH */
   "madarchod","madar chod","m@darchod","mad*rchod","m a d a r c h o d",
   "behenchod","behen chod","bhenchod","b*c","b c","bc","b.c","b-c",
   "chutiya","chut1ya","ch*tia","chut","chutiye","chutiy@",
@@ -88,8 +45,6 @@ const BLOCKED_WORDS = [
   "maa ki aankh","maa ki","maa k!","m@a ki",
   "teri maa","teri maa ki","t3ri maa","t*ri maa",
   "teri behen","teri bhen","t3ri bhen",
-
-  /* GUJLISH */
   "lavdo","lavda","lavdi","l@vdo","l*vda","laude","lavde","loude","l*ude","l*wde",
   "bhosdi","bhosdiya","bhosdiyo","bh0sdi",
   "gaand maro","gaandmaro","g@and maro",
@@ -100,10 +55,7 @@ const BLOCKED_WORDS = [
   "tari maa","tari ben","tari maa ni","tari ben ni",
   "taro baap","t@ro baap",
   "bhad ma ja","bhadma ja","bh@d ma j@",
-
-  /* SEX */
-  "sex","s3x","s*x","$ex","sexx","sexxx","s e x","s-e-x","s_ex","sx","secks","seks","seggs",
-  "s3ggs","segg","segging",
+  "sex","s3x","s*x","$ex","sexx","sexxx","s e x","s-e-x","s_ex","sx","secks","seks","seggs","s3ggs","segg","segging",
   "sexual","s3xual","s*xual","sexuall","sexyy","sexy","s3xy","s*xy",
   "horny","h0rny","h*rny","hornyy","h0rni",
   "lust","l*st","lusst",
@@ -115,19 +67,12 @@ const BLOCKED_WORDS = [
   "nudes","n*des","nud3s","nude","send nudes",
   "porn","p0rn","p*rn","pr0n",
   "xxx","x x x","x-x-x","x_x_x",
-
-  /* INDIAN SLANG SEXUAL */
   "chudai","ch*dai","chud@i","chodna","ch*dna","ch0dna",
   "chod","ch0d","ch*d",
   "sex karna","s*x karna","seks karna",
-  "suhagrat","suhaagrat",
-  "sambhog","sambh0g",
-  "chodu","ch0du","ch*du",
-  "chodi","ch0di","ch*di",
-  "chudelo","chudeli",
+  "suhagrat","suhaagrat","sambhog","sambh0g",
+  "chodu","ch0du","ch*du","chodi","ch0di","ch*di","chudelo","chudeli",
   "lauda sex","lavda sex",
-
-  /* THREATS */
   "kill","k1ll","k!ll","k*ll","k i l l",
   "die","d1e","d!e","d*e","d i e",
   "rape","r@pe","r*pe","rap3","r a p e",
@@ -148,10 +93,7 @@ const isAbusive = (text) => {
   return BLOCKED_WORDS.some(word => norm.includes(word) || original.includes(word));
 };
 
-const isEnglishOnly = (text) => {
-  const allowedChars = /^[a-zA-Z0-9\s.,!?'"()\-]+$/;
-  return allowedChars.test(text);
-};
+const isEnglishOnly = (text) => /^[a-zA-Z0-9\s.,!?'"()\-]+$/.test(text);
 
 const moderateContent = (text) => {
   if (!isEnglishOnly(text)) return "Only English letters are allowed.";
@@ -159,7 +101,6 @@ const moderateContent = (text) => {
   return null;
 };
 
-// --- SCHEMAS ---
 const RoomSchema = new mongoose.Schema({
   title: { type: String, required: true },
   slug: { type: String, unique: true },
@@ -173,7 +114,6 @@ const Room = mongoose.model('Room', RoomSchema);
 const DropSchema = new mongoose.Schema({
   roomId: String,
   content: String,
-  image: String,
   tempName: String,
   avatarIndex: Number,
   color: String,
@@ -190,8 +130,6 @@ const DropSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 const Drop = mongoose.model('Drop', DropSchema);
-
-// --- ROUTES ---
 
 app.get('/api/rooms', async (req, res) => {
   const rooms = await Room.find().sort({ savedCount: -1 });
@@ -219,17 +157,13 @@ app.get('/api/rooms/:slug', async (req, res) => {
 
 app.post('/api/drops', async (req, res) => {
   const { content, tempName } = req.body;
-
   if (!content || !content.trim()) return res.status(400).json({ error: "Write something first." });
-
   const contentError = moderateContent(content);
   if (contentError) return res.status(400).json({ error: contentError });
-
   if (tempName) {
     const nameError = moderateContent(tempName);
     if (nameError) return res.status(400).json({ error: "Display name contains invalid words." });
   }
-
   try {
     const drop = await Drop.create(req.body);
     await Room.findByIdAndUpdate(req.body.roomId, { lastDropAt: Date.now() });
@@ -269,17 +203,13 @@ app.post('/api/rooms/:id/save', async (req, res) => {
 
 app.post('/api/drops/:id/reply', async (req, res) => {
   const { content, tempName, avatarIndex } = req.body;
-
   if (!content) return res.status(400).json({ error: "Write something first." });
-
   const contentError = moderateContent(content);
   if (contentError) return res.status(400).json({ error: contentError });
-
   if (tempName) {
     const nameError = moderateContent(tempName);
     if (nameError) return res.status(400).json({ error: "Display name contains invalid words." });
   }
-
   try {
     const dropId = req.params.id.trim();
     if (!mongoose.Types.ObjectId.isValid(dropId)) {
@@ -288,7 +218,8 @@ app.post('/api/drops/:id/reply', async (req, res) => {
     const drop = await Drop.findById(dropId);
     if (!drop) return res.status(404).json({ error: "Drop not found" });
 
-    drop.replies.unshift({
+    // ✅ push instead of unshift — newest reply goes to bottom
+    drop.replies.push({
       content,
       tempName: tempName || "Anonymous",
       avatarIndex: Number(avatarIndex) || 0,

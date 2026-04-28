@@ -94,9 +94,11 @@ const isAbusive = (text) => {
 };
 
 // ✅ Allows: English letters, numbers, punctuation, AND emojis
-// Strips emojis out first before checking allowed chars, so emojis pass through
+// Uses Emoji_Presentation to only strip actual visual emoji (not numbers/symbols)
 const isEnglishOnly = (text) => {
-  const withoutEmoji = text.replace(/\p{Emoji}/gu, '');
+  const withoutEmoji = text
+    .replace(/\p{Emoji_Presentation}/gu, '') // actual emoji glyphs only
+    .replace(/[\u200d\ufe0f\u20e3]/g, '');   // zero-width joiners & variation selectors
   return /^[a-zA-Z0-9\s.,!?'"()\-]*$/.test(withoutEmoji);
 };
 

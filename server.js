@@ -93,12 +93,10 @@ const isAbusive = (text) => {
   return BLOCKED_WORDS.some(word => norm.includes(word) || original.includes(word));
 };
 
-// ✅ Allows: English letters, numbers, punctuation, AND emojis
-// Uses Emoji_Presentation to only strip actual visual emoji (not numbers/symbols)
 const isEnglishOnly = (text) => {
   const withoutEmoji = text
-    .replace(/\p{Emoji_Presentation}/gu, '') // actual emoji glyphs only
-    .replace(/[\u200d\ufe0f\u20e3]/g, '');   // zero-width joiners & variation selectors
+    .replace(/\p{Emoji_Presentation}/gu, '')
+    .replace(/[\u200d\ufe0f\u20e3]/g, '');
   return /^[a-zA-Z0-9\s.,!?'"()\-]*$/.test(withoutEmoji);
 };
 
@@ -112,7 +110,7 @@ const RoomSchema = new mongoose.Schema({
   title: { type: String, required: true },
   slug: { type: String, unique: true },
   color: { type: String, default: "#000000" },
-  savedCount: { type: Number, default: 0 },
+  savedCount: { type: Number, default: 0, min: 0 }, // ✅ min:0 at schema level
   lastDropAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now }
 });
@@ -139,8 +137,13 @@ const DropSchema = new mongoose.Schema({
 const Drop = mongoose.model('Drop', DropSchema);
 
 app.get('/api/rooms', async (req, res) => {
-  const rooms = await Room.find().sort({ savedCount: -1 });
-  res.json(rooms);
+  try {
+    const rooms = await Room.find().sort({ savedCount: -1 });
+    res.json(rooms);
+  } catch (err) {
+    console.error("GET /api/rooms failed:", err);
+    res.status(500).json({ error: "Failed to fetch rooms" });
+  }
 });
 
 app.post('/api/rooms', async (req, res) => {
@@ -155,11 +158,16 @@ app.post('/api/rooms', async (req, res) => {
 });
 
 app.get('/api/rooms/:slug', async (req, res) => {
-  const room = await Room.findOne({ slug: req.params.slug });
-  if (!room) return res.status(404).send("Not Found");
-  let drops = await Drop.find({ roomId: room._id }).sort({ createdAt: -1 }).lean();
-  drops = drops.map(d => ({ ...d, replies: d.replies || [] }));
-  res.json({ room, drops });
+  try {
+    const room = await Room.findOne({ slug: req.params.slug });
+    if (!room) return res.status(404).send("Not Found");
+    let drops = await Drop.find({ roomId: room._id }).sort({ createdAt: -1 }).lean();
+    drops = drops.map(d => ({ ...d, replies: d.replies || [] }));
+    res.json({ room, drops });
+  } catch (err) {
+    console.error("GET /api/rooms/:slug failed:", err);
+    res.status(500).json({ error: "Failed to fetch room" });
+  }
 });
 
 app.post('/api/drops', async (req, res) => {
@@ -198,14 +206,25 @@ app.post('/api/drops/:id/vote', async (req, res) => {
   }
 });
 
+// ✅ Clamped save — never goes below 0 in the database
 app.post('/api/rooms/:id/save', async (req, res) => {
-  const { action } = req.body;
-  const room = await Room.findByIdAndUpdate(
-    req.params.id,
-    { $inc: { savedCount: action === 'increment' ? 1 : -1 } },
-    { new: true }
-  );
-  res.json(room);
+  try {
+    const { action } = req.body;
+    const room = await Room.findById(req.params.id);
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    if (action === 'increment') {
+      room.savedCount = (room.savedCount || 0) + 1;
+    } else {
+      room.savedCount = Math.max(0, (room.savedCount || 0) - 1); // ✅ clamp at 0
+    }
+
+    await room.save();
+    res.json(room);
+  } catch (err) {
+    console.error("Save toggle failed:", err);
+    res.status(500).json({ error: "Save failed" });
+  }
 });
 
 app.post('/api/drops/:id/reply', async (req, res) => {

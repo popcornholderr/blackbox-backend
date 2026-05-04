@@ -16,6 +16,7 @@ app.use(cors({
 app.use(express.json());
 
 const BLOCKED_WORDS = [
+   "hoe","hoes","h*e",
   "fuck","fuk","fck","fucc","fuxk","f*ck","f**k","f***","f u c k",
   "f@ck","f#ck","f$ck","f%ck","f^ck","f&ck","f!ck",
   "fu*k","fuc*","fuc*k","f-u-c-k","f_u_c_k","phuck","phuk","phuc","phu*k",

@@ -16,7 +16,6 @@ app.use(cors({
 app.use(express.json());
 
 const BLOCKED_WORDS = [
-   "hoe","hoes","h*e",
   "fuck","fuk","fck","fucc","fuxk","f*ck","f**k","f***","f u c k",
   "f@ck","f#ck","f$ck","f%ck","f^ck","f&ck","f!ck",
   "fu*k","fuc*","fuc*k","f-u-c-k","f_u_c_k","phuck","phuk","phuc","phu*k",
@@ -27,6 +26,7 @@ const BLOCKED_WORDS = [
   "cock","c0ck","c*ck","co*k","c o c k",
   "pussy","puss","pu$$y","p*ssy","p u s s y",
   "slut","sl0t","sl*t","s l u t",
+  "hoe","hoes","h*e",
   "whore","wh0re","wh*re","w h o r e",
   "faggot","fag","f4g","f@g","f*g","fa**ot",
   "retard","ret4rd","ret@rd","re*ard","r e t a r d",
@@ -77,6 +77,8 @@ const BLOCKED_WORDS = [
   "kill","k1ll","k!ll","k*ll","k i l l",
   "die","d1e","d!e","d*e","d i e",
   "rape","r@pe","r*pe","rap3","r a p e",
+  "yoni","y0ni","y0n1","yon1",
+  "shishn","shishna"
 ];
 
 const normalize = (text) => {

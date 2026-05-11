@@ -84,11 +84,17 @@ const normalize = (text) => {
     .trim();
 };
 
-const isAbusive = (text) => {
+// Returns the matched word if abusive, null otherwise
+const findAbusiveWord = (text) => {
   const norm = normalize(text);
   const original = text.toLowerCase().replace(/\s+/g, ' ').trim();
-  return BLOCKED_WORDS.some(word => norm.includes(word) || original.includes(word));
+  for (const word of BLOCKED_WORDS) {
+    if (norm.includes(word) || original.includes(word)) return word;
+  }
+  return null;
 };
+
+const isAbusive = (text) => findAbusiveWord(text) !== null;
 
 const isEnglishOnly = (text) => {
   const withoutEmoji = text
@@ -98,16 +104,19 @@ const isEnglishOnly = (text) => {
 };
 
 const moderateContent = (text) => {
-  if (!isEnglishOnly(text)) return "Only English letters are allowed.";
-  if (isAbusive(text)) return "Abusive language is not allowed.";
+  if (!isEnglishOnly(text)) return { error: "Only English letters are allowed.", word: null };
+  const word = findAbusiveWord(text);
+  if (word) return { error: "Abusive language is not allowed.", word };
   return null;
 };
+
+// ── SCHEMAS ──────────────────────────────────────────────
 
 const RoomSchema = new mongoose.Schema({
   title: { type: String, required: true },
   slug: { type: String, unique: true },
   color: { type: String, default: "#000000" },
-  savedCount: { type: Number, default: 0, min: 0 }, // ✅ min:0 at schema level
+  savedCount: { type: Number, default: 0, min: 0 },
   lastDropAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now }
 });
@@ -133,12 +142,29 @@ const DropSchema = new mongoose.Schema({
 });
 const Drop = mongoose.model('Drop', DropSchema);
 
+const PollSchema = new mongoose.Schema({
+  roomId: { type: String, required: true },
+  question: { type: String, required: true },
+  options: [
+    {
+      text: { type: String, required: true },
+      voters: { type: [String], default: [] }  // array of userId strings
+    }
+  ],
+  allowMultiple: { type: Boolean, default: false },
+  tempName: { type: String, default: "Anonymous" },
+  avatarIndex: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+});
+const Poll = mongoose.model('Poll', PollSchema);
+
+// ── ROOM ROUTES ──────────────────────────────────────────
+
 app.get('/api/rooms', async (req, res) => {
   try {
     const rooms = await Room.find().sort({ savedCount: -1 });
     res.json(rooms);
   } catch (err) {
-    console.error("GET /api/rooms failed:", err);
     res.status(500).json({ error: "Failed to fetch rooms" });
   }
 });
@@ -160,21 +186,40 @@ app.get('/api/rooms/:slug', async (req, res) => {
     if (!room) return res.status(404).send("Not Found");
     let drops = await Drop.find({ roomId: room._id }).sort({ createdAt: -1 }).lean();
     drops = drops.map(d => ({ ...d, replies: d.replies || [] }));
-    res.json({ room, drops });
+    let polls = await Poll.find({ roomId: room._id }).sort({ createdAt: -1 }).lean();
+    res.json({ room, drops, polls });
   } catch (err) {
-    console.error("GET /api/rooms/:slug failed:", err);
     res.status(500).json({ error: "Failed to fetch room" });
   }
 });
 
+app.post('/api/rooms/:id/save', async (req, res) => {
+  try {
+    const { action } = req.body;
+    const room = await Room.findById(req.params.id);
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    if (action === 'increment') {
+      room.savedCount = (room.savedCount || 0) + 1;
+    } else {
+      room.savedCount = Math.max(0, (room.savedCount || 0) - 1);
+    }
+    await room.save();
+    res.json(room);
+  } catch (err) {
+    res.status(500).json({ error: "Save failed" });
+  }
+});
+
+// ── DROP ROUTES ──────────────────────────────────────────
+
 app.post('/api/drops', async (req, res) => {
   const { content, tempName } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: "Write something first." });
-  const contentError = moderateContent(content);
-  if (contentError) return res.status(400).json({ error: contentError });
+  const contentResult = moderateContent(content);
+  if (contentResult) return res.status(400).json({ error: contentResult.error, abusiveWord: contentResult.word });
   if (tempName) {
-    const nameError = moderateContent(tempName);
-    if (nameError) return res.status(400).json({ error: "Display name contains invalid words." });
+    const nameResult = moderateContent(tempName);
+    if (nameResult) return res.status(400).json({ error: "Display name contains invalid words.", abusiveWord: nameResult.word });
   }
   try {
     const drop = await Drop.create(req.body);
@@ -187,12 +232,18 @@ app.post('/api/drops', async (req, res) => {
 
 app.post('/api/drops/:id/vote', async (req, res) => {
   const { userId, type } = req.body;
+  if (!userId || !['likes', 'dislikes'].includes(type)) {
+    return res.status(400).json({ error: "Invalid vote request" });
+  }
   try {
     const drop = await Drop.findById(req.params.id);
+    if (!drop) return res.status(404).json({ error: "Drop not found" });
+    // Toggle: remove if already voted, add otherwise
     if (drop[type].includes(userId)) {
       drop[type] = drop[type].filter(id => id !== userId);
     } else {
       drop[type].push(userId);
+      // Remove from opposite
       const opposite = type === 'likes' ? 'dislikes' : 'likes';
       drop[opposite] = drop[opposite].filter(id => id !== userId);
     }
@@ -203,35 +254,14 @@ app.post('/api/drops/:id/vote', async (req, res) => {
   }
 });
 
-// ✅ Clamped save — never goes below 0 in the database
-app.post('/api/rooms/:id/save', async (req, res) => {
-  try {
-    const { action } = req.body;
-    const room = await Room.findById(req.params.id);
-    if (!room) return res.status(404).json({ error: "Room not found" });
-
-    if (action === 'increment') {
-      room.savedCount = (room.savedCount || 0) + 1;
-    } else {
-      room.savedCount = Math.max(0, (room.savedCount || 0) - 1); // ✅ clamp at 0
-    }
-
-    await room.save();
-    res.json(room);
-  } catch (err) {
-    console.error("Save toggle failed:", err);
-    res.status(500).json({ error: "Save failed" });
-  }
-});
-
 app.post('/api/drops/:id/reply', async (req, res) => {
   const { content, tempName, avatarIndex } = req.body;
   if (!content) return res.status(400).json({ error: "Write something first." });
-  const contentError = moderateContent(content);
-  if (contentError) return res.status(400).json({ error: contentError });
+  const contentResult = moderateContent(content);
+  if (contentResult) return res.status(400).json({ error: contentResult.error, abusiveWord: contentResult.word });
   if (tempName) {
-    const nameError = moderateContent(tempName);
-    if (nameError) return res.status(400).json({ error: "Display name contains invalid words." });
+    const nameResult = moderateContent(tempName);
+    if (nameResult) return res.status(400).json({ error: "Display name contains invalid words.", abusiveWord: nameResult.word });
   }
   try {
     const dropId = req.params.id.trim();
@@ -240,20 +270,123 @@ app.post('/api/drops/:id/reply', async (req, res) => {
     }
     const drop = await Drop.findById(dropId);
     if (!drop) return res.status(404).json({ error: "Drop not found" });
-
     drop.replies.push({
       content,
       tempName: tempName || "Anonymous",
       avatarIndex: Number(avatarIndex) || 0,
       createdAt: new Date()
     });
-
     await drop.save();
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).json(drop);
   } catch (err) {
-    console.error("Reply error:", err);
     return res.status(500).json({ error: "Server error processing reply" });
+  }
+});
+
+// ── POLL ROUTES ──────────────────────────────────────────
+
+app.post('/api/polls', async (req, res) => {
+  const { roomId, question, options, allowMultiple, tempName, avatarIndex } = req.body;
+  if (!question || !question.trim()) return res.status(400).json({ error: "Poll question is required." });
+  if (!options || options.length < 2) return res.status(400).json({ error: "At least 2 options required." });
+  if (options.length > 4) return res.status(400).json({ error: "Maximum 4 options allowed." });
+
+  const qResult = moderateContent(question);
+  if (qResult) return res.status(400).json({ error: qResult.error, abusiveWord: qResult.word });
+
+  for (const opt of options) {
+    if (!opt.trim()) return res.status(400).json({ error: "Options cannot be empty." });
+    const optResult = moderateContent(opt);
+    if (optResult) return res.status(400).json({ error: optResult.error, abusiveWord: optResult.word });
+  }
+
+  if (tempName) {
+    const nameResult = moderateContent(tempName);
+    if (nameResult) return res.status(400).json({ error: "Display name contains invalid words.", abusiveWord: nameResult.word });
+  }
+
+  try {
+    const poll = await Poll.create({
+      roomId,
+      question,
+      options: options.map(text => ({ text, voters: [] })),
+      allowMultiple: !!allowMultiple,
+      tempName: tempName || "Anonymous",
+      avatarIndex: Number(avatarIndex) || 0
+    });
+    await Room.findByIdAndUpdate(roomId, { lastDropAt: Date.now() });
+    res.json(poll);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to create poll." });
+  }
+});
+
+app.post('/api/polls/:id/vote', async (req, res) => {
+  const { userId, optionIndex } = req.body;
+  if (!userId || optionIndex === undefined) {
+    return res.status(400).json({ error: "Invalid vote request" });
+  }
+  try {
+    const poll = await Poll.findById(req.params.id);
+    if (!poll) return res.status(404).json({ error: "Poll not found" });
+
+    if (!poll.allowMultiple) {
+      // Remove user from all options first
+      poll.options.forEach(opt => {
+        opt.voters = opt.voters.filter(id => id !== userId);
+      });
+    }
+
+    const opt = poll.options[optionIndex];
+    if (!opt) return res.status(400).json({ error: "Invalid option" });
+
+    if (opt.voters.includes(userId)) {
+      // Toggle off
+      opt.voters = opt.voters.filter(id => id !== userId);
+    } else {
+      opt.voters.push(userId);
+    }
+
+    poll.markModified('options');
+    await poll.save();
+    res.json(poll);
+  } catch (err) {
+    res.status(500).json({ error: "Vote failed" });
+  }
+});
+
+// ── TODAY'S BEST DROP & POLL ─────────────────────────────
+
+app.get('/api/today/best-drop', async (req, res) => {
+  try {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const drops = await Drop.find({ createdAt: { $gte: startOfDay } }).lean();
+    if (!drops.length) return res.json(null);
+    const best = drops.reduce((a, b) => (b.likes.length > a.likes.length ? b : a));
+    const room = await Room.findById(best.roomId).lean();
+    res.json({ drop: { ...best, replies: best.replies || [] }, room });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch best drop" });
+  }
+});
+
+app.get('/api/today/best-poll', async (req, res) => {
+  try {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const polls = await Poll.find({ createdAt: { $gte: startOfDay } }).lean();
+    if (!polls.length) return res.json(null);
+    const best = polls.reduce((a, b) => {
+      const aVotes = a.options.reduce((s, o) => s + o.voters.length, 0);
+      const bVotes = b.options.reduce((s, o) => s + o.voters.length, 0);
+      return bVotes > aVotes ? b : a;
+    });
+    const room = await Room.findById(best.roomId).lean();
+    res.json({ poll: best, room });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch best poll" });
   }
 });
 

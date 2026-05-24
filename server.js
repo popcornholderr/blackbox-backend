@@ -75,6 +75,13 @@ const BLOCKED_WORDS = [
   "shishn","shishna"
 ];
 
+// Words ALWAYS blocked regardless of room type (CSAM, terrorism, extreme harm)
+const ABSOLUTE_BLOCKED = [
+  "child porn","childporn","cp porn","pedo","pedophile","pedophilia","loli","shota",
+  "isis","isil","al qaeda","alqaeda","jihad","terrorism","terrorist","bomb making",
+  "how to make bomb","suicide bomb","mass shooting","school shooting"
+];
+
 const normalize = (text) => {
   return text
     .toLowerCase()
@@ -84,7 +91,15 @@ const normalize = (text) => {
     .trim();
 };
 
-// Returns the matched word if abusive, null otherwise
+const findAbsoluteBlockedWord = (text) => {
+  const norm = normalize(text);
+  const original = text.toLowerCase().replace(/\s+/g, ' ').trim();
+  for (const word of ABSOLUTE_BLOCKED) {
+    if (norm.includes(word) || original.includes(word)) return word;
+  }
+  return null;
+};
+
 const findAbusiveWord = (text) => {
   const norm = normalize(text);
   const original = text.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -94,19 +109,24 @@ const findAbusiveWord = (text) => {
   return null;
 };
 
-const isAbusive = (text) => findAbusiveWord(text) !== null;
-
 const isEnglishOnly = (text) => {
   const withoutEmoji = text
     .replace(/\p{Emoji_Presentation}/gu, '')
     .replace(/[\u200d\ufe0f\u20e3]/g, '');
-  return /^[a-zA-Z0-9\s.,!?'"()\-]*$/.test(withoutEmoji);
+  return /^[a-zA-Z0-9\s.,!?'"()\-_@#$%&*+=:;<>/\\|~`^{}[\]]*$/.test(withoutEmoji);
 };
 
-const moderateContent = (text) => {
+// isAdult: if true, only absolute blocks apply. if false, full word list applies.
+const moderateContent = (text, isAdult = false) => {
   if (!isEnglishOnly(text)) return { error: "Only English letters are allowed.", word: null };
-  const word = findAbusiveWord(text);
-  if (word) return { error: "Abusive language is not allowed.", word };
+  // Always check absolute blocks
+  const absWord = findAbsoluteBlockedWord(text);
+  if (absWord) return { error: "This content is not allowed.", word: absWord };
+  // In safe rooms, also check the full abusive word list
+  if (!isAdult) {
+    const word = findAbusiveWord(text);
+    if (word) return { error: "Abusive language is not allowed.", word };
+  }
   return null;
 };
 
@@ -118,7 +138,10 @@ const RoomSchema = new mongoose.Schema({
   color: { type: String, default: "#000000" },
   savedCount: { type: Number, default: 0, min: 0 },
   lastDropAt: { type: Date, default: Date.now },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  isAdult: { type: Boolean, default: false },       // 18+ room
+  isPrivate: { type: Boolean, default: false },     // private room
+  adminCode: { type: String, default: null },       // admin passcode for private rooms
 });
 const Room = mongoose.model('Room', RoomSchema);
 
@@ -148,7 +171,7 @@ const PollSchema = new mongoose.Schema({
   options: [
     {
       text: { type: String, required: true },
-      voters: { type: [String], default: [] }  // array of userId strings
+      voters: { type: [String], default: [] }
     }
   ],
   allowMultiple: { type: Boolean, default: false },
@@ -157,6 +180,16 @@ const PollSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 const Poll = mongoose.model('Poll', PollSchema);
+
+// Join requests for private rooms
+const JoinRequestSchema = new mongoose.Schema({
+  roomId: { type: String, required: true },
+  userId: { type: String, required: true },
+  name: { type: String, required: true },
+  status: { type: String, enum: ['pending', 'approved', 'denied'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now }
+});
+const JoinRequest = mongoose.model('JoinRequest', JoinRequestSchema);
 
 // ── ROOM ROUTES ──────────────────────────────────────────
 
@@ -170,10 +203,15 @@ app.get('/api/rooms', async (req, res) => {
 });
 
 app.post('/api/rooms', async (req, res) => {
-  const { title, color } = req.body;
+  const { title, color, isAdult, isPrivate, adminCode } = req.body;
   const slug = title.toLowerCase().split(' ').filter(Boolean).join('-');
   try {
-    const room = await Room.create({ title, slug, color });
+    const room = await Room.create({
+      title, slug, color,
+      isAdult: !!isAdult,
+      isPrivate: !!isPrivate,
+      adminCode: isPrivate ? (adminCode || null) : null
+    });
     res.json(room);
   } catch (e) {
     res.status(400).json({ error: "Title taken" });
@@ -187,7 +225,10 @@ app.get('/api/rooms/:slug', async (req, res) => {
     let drops = await Drop.find({ roomId: room._id }).sort({ createdAt: -1 }).lean();
     drops = drops.map(d => ({ ...d, replies: d.replies || [] }));
     let polls = await Poll.find({ roomId: room._id }).sort({ createdAt: -1 }).lean();
-    res.json({ room, drops, polls });
+    // Don't expose adminCode to clients
+    const roomData = room.toObject();
+    delete roomData.adminCode;
+    res.json({ room: roomData, drops, polls });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch room" });
   }
@@ -210,20 +251,102 @@ app.post('/api/rooms/:id/save', async (req, res) => {
   }
 });
 
+// Verify admin code for private room
+app.post('/api/rooms/:id/verify-admin', async (req, res) => {
+  try {
+    const { code } = req.body;
+    const room = await Room.findById(req.params.id);
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    if (!room.isPrivate) return res.status(400).json({ error: "Not a private room" });
+    if (room.adminCode && room.adminCode === code) {
+      return res.json({ isAdmin: true });
+    }
+    return res.json({ isAdmin: false });
+  } catch (err) {
+    res.status(500).json({ error: "Verification failed" });
+  }
+});
+
+// ── JOIN REQUEST ROUTES ──────────────────────────────────
+
+// Submit a join request
+app.post('/api/rooms/:id/join-request', async (req, res) => {
+  try {
+    const { userId, name } = req.body;
+    if (!userId || !name || !name.trim()) return res.status(400).json({ error: "Name is required." });
+    const room = await Room.findById(req.params.id);
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    if (!room.isPrivate) return res.status(400).json({ error: "Not a private room" });
+    // Check if request already exists
+    const existing = await JoinRequest.findOne({ roomId: req.params.id, userId });
+    if (existing) return res.json(existing);
+    const request = await JoinRequest.create({ roomId: req.params.id, userId, name: name.trim() });
+    res.json(request);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to submit request" });
+  }
+});
+
+// Get join request status for a user
+app.get('/api/rooms/:id/join-request/:userId', async (req, res) => {
+  try {
+    const request = await JoinRequest.findOne({ roomId: req.params.id, userId: req.params.userId });
+    if (!request) return res.json({ status: 'none' });
+    res.json(request);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch request" });
+  }
+});
+
+// Get all pending join requests (admin only — requires code verification via separate call)
+app.get('/api/rooms/:id/join-requests', async (req, res) => {
+  try {
+    const requests = await JoinRequest.find({ roomId: req.params.id, status: 'pending' }).sort({ createdAt: 1 });
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch requests" });
+  }
+});
+
+// Approve / deny / kick a user (admin action)
+app.post('/api/rooms/:id/join-requests/:requestId', async (req, res) => {
+  try {
+    const { action } = req.body; // 'approved' | 'denied' | 'kick'
+    if (!['approved', 'denied', 'kick'].includes(action)) return res.status(400).json({ error: "Invalid action" });
+    const request = await JoinRequest.findById(req.params.requestId);
+    if (!request) return res.status(404).json({ error: "Request not found" });
+    if (action === 'kick') {
+      await JoinRequest.findByIdAndDelete(req.params.requestId);
+    } else {
+      request.status = action;
+      await request.save();
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Action failed" });
+  }
+});
+
 // ── DROP ROUTES ──────────────────────────────────────────
 
 app.post('/api/drops', async (req, res) => {
-  const { content, tempName } = req.body;
+  const { content, tempName, roomId } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: "Write something first." });
-  const contentResult = moderateContent(content);
+  // Fetch room to know if it's adult
+  let isAdult = false;
+  try {
+    const room = await Room.findById(roomId);
+    if (room) isAdult = room.isAdult;
+  } catch {}
+  const contentResult = moderateContent(content, isAdult);
   if (contentResult) return res.status(400).json({ error: contentResult.error, abusiveWord: contentResult.word });
   if (tempName) {
-    const nameResult = moderateContent(tempName);
+    const nameResult = moderateContent(tempName, false); // names always safe-moderated
     if (nameResult) return res.status(400).json({ error: "Display name contains invalid words.", abusiveWord: nameResult.word });
   }
   try {
     const drop = await Drop.create(req.body);
-    await Room.findByIdAndUpdate(req.body.roomId, { lastDropAt: Date.now() });
+    await Room.findByIdAndUpdate(roomId, { lastDropAt: Date.now() });
     res.json(drop);
   } catch (e) {
     res.status(500).json({ error: "Post failed." });
@@ -238,12 +361,10 @@ app.post('/api/drops/:id/vote', async (req, res) => {
   try {
     const drop = await Drop.findById(req.params.id);
     if (!drop) return res.status(404).json({ error: "Drop not found" });
-    // Toggle: remove if already voted, add otherwise
     if (drop[type].includes(userId)) {
       drop[type] = drop[type].filter(id => id !== userId);
     } else {
       drop[type].push(userId);
-      // Remove from opposite
       const opposite = type === 'likes' ? 'dislikes' : 'likes';
       drop[opposite] = drop[opposite].filter(id => id !== userId);
     }
@@ -255,12 +376,26 @@ app.post('/api/drops/:id/vote', async (req, res) => {
 });
 
 app.post('/api/drops/:id/reply', async (req, res) => {
-  const { content, tempName, avatarIndex } = req.body;
+  const { content, tempName, avatarIndex, roomId } = req.body;
   if (!content) return res.status(400).json({ error: "Write something first." });
-  const contentResult = moderateContent(content);
+  let isAdult = false;
+  try {
+    if (roomId) {
+      const room = await Room.findById(roomId);
+      if (room) isAdult = room.isAdult;
+    } else {
+      // Try to find room via drop
+      const drop = await Drop.findById(req.params.id);
+      if (drop) {
+        const room = await Room.findById(drop.roomId);
+        if (room) isAdult = room.isAdult;
+      }
+    }
+  } catch {}
+  const contentResult = moderateContent(content, isAdult);
   if (contentResult) return res.status(400).json({ error: contentResult.error, abusiveWord: contentResult.word });
   if (tempName) {
-    const nameResult = moderateContent(tempName);
+    const nameResult = moderateContent(tempName, false);
     if (nameResult) return res.status(400).json({ error: "Display name contains invalid words.", abusiveWord: nameResult.word });
   }
   try {
@@ -292,17 +427,23 @@ app.post('/api/polls', async (req, res) => {
   if (!options || options.length < 2) return res.status(400).json({ error: "At least 2 options required." });
   if (options.length > 4) return res.status(400).json({ error: "Maximum 4 options allowed." });
 
-  const qResult = moderateContent(question);
+  let isAdult = false;
+  try {
+    const room = await Room.findById(roomId);
+    if (room) isAdult = room.isAdult;
+  } catch {}
+
+  const qResult = moderateContent(question, isAdult);
   if (qResult) return res.status(400).json({ error: qResult.error, abusiveWord: qResult.word });
 
   for (const opt of options) {
     if (!opt.trim()) return res.status(400).json({ error: "Options cannot be empty." });
-    const optResult = moderateContent(opt);
+    const optResult = moderateContent(opt, isAdult);
     if (optResult) return res.status(400).json({ error: optResult.error, abusiveWord: optResult.word });
   }
 
   if (tempName) {
-    const nameResult = moderateContent(tempName);
+    const nameResult = moderateContent(tempName, false);
     if (nameResult) return res.status(400).json({ error: "Display name contains invalid words.", abusiveWord: nameResult.word });
   }
 
@@ -332,7 +473,6 @@ app.post('/api/polls/:id/vote', async (req, res) => {
     if (!poll) return res.status(404).json({ error: "Poll not found" });
 
     if (!poll.allowMultiple) {
-      // Remove user from all options first
       poll.options.forEach(opt => {
         opt.voters = opt.voters.filter(id => id !== userId);
       });
@@ -342,7 +482,6 @@ app.post('/api/polls/:id/vote', async (req, res) => {
     if (!opt) return res.status(400).json({ error: "Invalid option" });
 
     if (opt.voters.includes(userId)) {
-      // Toggle off
       opt.voters = opt.voters.filter(id => id !== userId);
     } else {
       opt.voters.push(userId);
@@ -362,7 +501,13 @@ app.get('/api/today/best-drop', async (req, res) => {
   try {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    const drops = await Drop.find({ createdAt: { $gte: startOfDay } }).lean();
+    // Only show best drop from public, non-private rooms
+    const publicRooms = await Room.find({ isPrivate: { $ne: true } }).lean();
+    const publicRoomIds = publicRooms.map(r => String(r._id));
+    const drops = await Drop.find({
+      createdAt: { $gte: startOfDay },
+      roomId: { $in: publicRoomIds }
+    }).lean();
     if (!drops.length) return res.json(null);
     const best = drops.reduce((a, b) => (b.likes.length > a.likes.length ? b : a));
     const room = await Room.findById(best.roomId).lean();
@@ -376,7 +521,12 @@ app.get('/api/today/best-poll', async (req, res) => {
   try {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    const polls = await Poll.find({ createdAt: { $gte: startOfDay } }).lean();
+    const publicRooms = await Room.find({ isPrivate: { $ne: true } }).lean();
+    const publicRoomIds = publicRooms.map(r => String(r._id));
+    const polls = await Poll.find({
+      createdAt: { $gte: startOfDay },
+      roomId: { $in: publicRoomIds }
+    }).lean();
     if (!polls.length) return res.json(null);
     const best = polls.reduce((a, b) => {
       const aVotes = a.options.reduce((s, o) => s + o.voters.length, 0);
